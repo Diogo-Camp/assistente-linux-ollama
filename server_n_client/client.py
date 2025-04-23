@@ -1,62 +1,57 @@
 import requests
-import json
+import time
 
-class ChatClient:
+class ChatbotClient:
     def __init__(self, base_url="http://192.168.0.36:5000"):
         self.base_url = base_url
-        self.session = requests.Session()
         self.conversation_id = None
-
-    def send_message(self, message: str):
-        try:
-            data = {"message": message}
-            if self.conversation_id:
-                data["conversation_id"] = self.conversation_id
-            
-            response = self.session.post(
-                f"{self.base_url}/api/chat",
-                json=data,
-                timeout=60
-            )
-            
-            response.raise_for_status()
-            result = response.json()
-            
-            if not self.conversation_id and 'conversation_id' in result:
-                self.conversation_id = result['conversation_id']
-            
-            return result
+    
+    def start_conversation(self, title="Nova Conversa"):
+        response = requests.post(
+            f"{self.base_url}/api/start",
+            json={'title': title}
+        )
+        self.conversation_id = response.json()['conversation_id']
+        print(f"Conversa iniciada: {self.conversation_id}")
+    
+    def send_message(self, message):
+        if not self.conversation_id:
+            self.start_conversation()
         
-        except requests.exceptions.RequestException as e:
-            print(f"Erro na requisição: {str(e)}")
-            if hasattr(e, 'response') and e.response:
-                print(f"Resposta do servidor: {e.response.text}")
-            return None
+        response = requests.post(
+            f"{self.base_url}/api/chat",
+            json={
+                'conversation_id': self.conversation_id,
+                'message': message
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"\nAssistente: {data['response']}")
+            print(f"(Modelo: {data['metadata']['model']}, Tokens: {data['metadata']['tokens_used']})")
+        else:
+            print(f"Erro: {response.text}")
 
 def main():
-    client = ChatClient()
+    client = ChatbotClient()
     
-    # Teste de conexão
+    # Testa conexão
     try:
         health = requests.get(f"{client.base_url}/api/health", timeout=2)
         print(f"Conectado ao servidor: {health.json()}")
     except:
-        print("Não foi possível conectar ao servidor")
+        print("Não foi possível conectar ao servidor. Verifique se está rodando.")
         return
+    
+    client.start_conversation()
     
     while True:
         try:
             message = input("\nVocê: ")
             if message.lower() in ['sair', 'exit', 'quit']:
                 break
-            
-            result = client.send_message(message)
-            if result:
-                print(f"\nAssistente: {result.get('response')}")
-                print(f"ID da Conversa: {result.get('conversation_id')}")
-            else:
-                print("Não foi possível obter resposta")
-        
+            client.send_message(message)
         except KeyboardInterrupt:
             print("\nEncerrando...")
             break
